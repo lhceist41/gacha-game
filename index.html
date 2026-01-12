@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#0b0e22" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="A tiny browser-based gacha character collector." />
+
+  <title>Mini Gacha</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
+</head>
+
+<body>
+  <div class="app">
+    <header>
+      <div class="brand" aria-label="Mini Gacha">
+        <span class="logo" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2.5l2.6 6.2 6.7.5-5.1 4.3 1.6 6.4L12 16.9 6.2 19.9l1.6-6.4-5.1-4.3 6.7-.5L12 2.5z"
+                  stroke="rgba(255,255,255,.55)" stroke-width="1.2" />
+          </svg>
+        </span>
+        <div>
+          <h1>Mini Gacha</h1>
+          <small>Summon, collect and build your roster</small>
+        </div>
+      </div>
+
+      <div class="bar" aria-label="Top bar">
+        <div class="rarity rare" aria-label="Gem count">
+          💎 Gems <span id="gems">0</span>
+        </div>
+        <button id="addGems" type="button" aria-label="Add 100 gems for testing">+100 (debug)</button>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="panel" aria-label="Summon">
+        <h2>Summon</h2>
+        <small>Spend gems to pull a character. Higher rarities are rarer.</small>
+
+        <div class="bar" style="margin-top:10px">
+          <button id="summon1" type="button" aria-label="Summon one character for 10 gems">Summon x1 (Cost: 10)</button>
+        </div>
+
+        <div id="result" class="result" role="status" aria-live="polite" aria-atomic="true"></div>
+
+        <noscript>
+          <div class="result" style="margin-top:12px">
+            JavaScript is required to play this game.
+          </div>
+        </noscript>
+      </section>
+
+      <section class="panel" aria-label="Collection">
+        <h2>Collection</h2>
+        <small>Your pulls show up here. Add to Home Screen for a more app-like feel.</small>
+
+        <div id="collection" class="grid" aria-label="Collected characters"></div>
+
+        <template id="cardTemplate">
+          <article class="card common">
+            <div class="rarity common">Common</div>
+            <h3 style="margin:10px 0 4px">Character Name</h3>
+            <small>Short description</small>
+          </article>
+        </template>
+      </section>
+    </main>
+
+    </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
