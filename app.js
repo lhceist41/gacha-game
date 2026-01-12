@@ -437,9 +437,12 @@ function loginRewardForStreak(streak) {
 
 function formatDuration(ms) {
   const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const time = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return days > 0 ? `${days}d ${time}` : time;
 }
 
 function getActiveMission() {
@@ -626,24 +629,7 @@ function render() {
   if (bannerDesc) {
     bannerDesc.textContent = getActiveBanner().description;
   }
-  ensureBannerWindows();
-  const activeBanner = getActiveBanner();
-  if (bannerTimer) {
-    const remaining = bannerRemainingMs(activeBanner.id);
-    bannerTimer.textContent = remaining > 0
-      ? `Ends in ${formatDuration(remaining)}`
-      : "Banner closed";
-  }
-  if (bannerPreview) {
-    const featured = bannerFeaturedUnits(activeBanner);
-    bannerPreview.innerHTML = featured.length
-      ? featured.map(unit => `
-          <div class="preview-pill ${rarityClass(unit.rarity)}">
-            ${unit.element} ${unit.name}
-          </div>
-        `).join("")
-      : `<small class="preview-empty">No featured units.</small>`;
-  }
+  updateBannerUI();
   if (streakEl) streakEl.textContent = String(state.loginStreak);
   if (levelEl) levelEl.textContent = String(state.level);
   if (xpEl) xpEl.textContent = `${state.xp}/${xpForNextLevel(state.level)}`;
@@ -858,6 +844,25 @@ function handleShopPurchase(unitId) {
   setResultText(`Purchased ${unit.name} for ${SHOP_CONFIG.costShards} shards.`);
 }
 
+function updateBannerUI() {
+  if (!bannerTimer || !bannerPreview) return;
+  ensureBannerWindows();
+  const activeBanner = getActiveBanner();
+  const remaining = bannerRemainingMs(activeBanner.id);
+  bannerTimer.textContent = remaining > 0
+    ? `Ends in ${formatDuration(remaining)}`
+    : "Banner closed";
+
+  const featured = bannerFeaturedUnits(activeBanner);
+  bannerPreview.innerHTML = featured.length
+    ? featured.map(unit => `
+        <div class="preview-pill ${rarityClass(unit.rarity)}">
+          ${unit.element} ${unit.name}
+        </div>
+      `).join("")
+    : `<small class="preview-empty">No featured units.</small>`;
+}
+
 function updateMissionUI() {
   if (!missionList) return;
   const activeId = state.activeMissionId;
@@ -1033,7 +1038,7 @@ bindEvents();
 render();
 setInterval(updateMissionUI, 1000);
 setInterval(updateShopUI, 1000);
-setInterval(render, 10000);
+setInterval(updateBannerUI, 1000);
 
 // Optional service worker registration if you have sw.js
 if ("serviceWorker" in navigator) {
