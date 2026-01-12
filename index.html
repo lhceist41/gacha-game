@@ -34,6 +34,9 @@
         <div class="rarity rare" aria-label="Gem count">
           💎 Gems <span id="gems">0</span>
         </div>
+        <div class="rarity epic" aria-label="Shard count">
+          💠 Shards <span id="shards">0</span>
+        </div>
         <button id="addGems" type="button" aria-label="Add 100 gems for testing">+100 (debug)</button>
       </div>
     </header>
@@ -43,8 +46,36 @@
         <h2>Summon</h2>
         <small>Spend gems to pull a character. Higher rarities are rarer.</small>
 
+        <div class="bar" style="margin-top:10px; align-items:flex-start; gap:12px">
+          <div>
+            <div style="display:flex; align-items:center; gap:10px">
+              <strong>Daily Login</strong>
+              <small id="loginStatus">Ready to claim</small>
+            </div>
+            <small>Streak: <span id="loginStreak">0</span> days</small>
+          </div>
+          <button id="loginAction" type="button">Claim</button>
+        </div>
+        <div class="progress-card">
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <strong>Level <span id="playerLevel">1</span></strong>
+            <small>XP: <span id="playerXp">0/100</span></small>
+          </div>
+          <div class="progress-bar" aria-hidden="true">
+            <div class="progress-fill" id="xpFill"></div>
+          </div>
+          <small>Level ups grant bonus gems.</small>
+        </div>
+
+        <div class="bar" style="margin-top:10px">
+          <label for="bannerSelect"><small>Banner</small></label>
+          <select id="bannerSelect" aria-label="Select summon banner"></select>
+        </div>
+        <small id="bannerDesc" style="display:block; margin-top:6px"></small>
+
         <div class="bar" style="margin-top:10px">
           <button id="summon1" type="button" aria-label="Summon one character for 10 gems">Summon x1 (Cost: 10)</button>
+          <button id="summon10" type="button" aria-label="Summon ten characters for 100 gems">Summon x10 (Cost: 100)</button>
         </div>
 
         <div id="result" class="result" role="status" aria-live="polite" aria-atomic="true"></div>

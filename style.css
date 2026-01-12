@@ -206,6 +206,57 @@ main{
   position: relative;
   overflow: hidden;
 }
+.progress-card{
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(180,200,255,.12);
+  background: rgba(8, 10, 26, .5);
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+}
+.progress-bar{
+  margin: 8px 0 6px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  overflow: hidden;
+}
+.progress-fill{
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(34,211,238,.7), rgba(139,92,246,.9));
+  transition: width .3s ease;
+}
+.result-list{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 8px 0 0;
+}
+.result-item{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(180,200,255,.12);
+  background: rgba(6, 8, 22, .62);
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+  opacity: 0;
+  transform: translateY(8px) scale(.98);
+}
+.shard-tag{
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #c4b5fd;
+  border: 1px solid rgba(196,181,253,.22);
+  background: rgba(124,58,237,.12);
+}
+.result.reveal .result-item{
+  animation: reveal-item .38s ease forwards;
+}
 .result::after{
   content:"";
   position:absolute;
@@ -220,6 +271,10 @@ main{
   20%{ opacity:.35; }
   50%{ opacity:.25; }
   100%{ transform: translateX(70%); opacity:.0; }
+}
+@keyframes reveal-item{
+  0%{ opacity: 0; transform: translateY(10px) scale(.98); }
+  100%{ opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Cards grid */
