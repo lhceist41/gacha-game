@@ -167,7 +167,7 @@ button:focus-visible{
 /* Layout */
 main{
   display:grid;
-  grid-template-columns: 1fr 1.25fr;
+  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1fr);
   gap: 14px;
   margin-top: 14px;
 }
@@ -183,6 +183,15 @@ main{
   -webkit-backdrop-filter: blur(10px);
   position: relative;
   overflow: hidden;
+}
+.panel h2{
+  margin: 0 0 4px;
+  font-size: 18px;
+  letter-spacing: .2px;
+}
+.panel > small{
+  display: block;
+  opacity: .85;
 }
 .panel::before{
   content:"";
@@ -206,6 +215,151 @@ main{
   position: relative;
   overflow: hidden;
 }
+.progress-card{
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(180,200,255,.12);
+  background:
+    radial-gradient(200px 80px at 20% 10%, rgba(139,92,246,.12), transparent 65%),
+    rgba(8, 10, 26, .5);
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+}
+.progress-bar{
+  margin: 8px 0 6px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  overflow: hidden;
+}
+.progress-fill{
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, rgba(34,211,238,.7), rgba(139,92,246,.9));
+  transition: width .3s ease;
+}
+.mission-list{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+.mission-card{
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(180,200,255,.12);
+  background:
+    radial-gradient(220px 90px at 15% 10%, rgba(34,211,238,.12), transparent 60%),
+    rgba(8, 10, 26, .5);
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+}
+.mission-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+.mission-status{
+  color: var(--muted);
+}
+.mission-rewards{
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 13px;
+}
+.mission-action{
+  margin-top: 10px;
+  width: 100%;
+}
+.banner-meta{
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.banner-meta small{
+  color: var(--muted);
+}
+.banner-preview{
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.preview-pill{
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(180,200,255,.16);
+  background: rgba(12, 14, 34, .55);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-empty{
+  color: var(--muted);
+}
+.shop-header{
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.shop-list{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+.shop-card{
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(180,200,255,.12);
+  background:
+    radial-gradient(220px 90px at 20% 10%, rgba(251,191,36,.12), transparent 60%),
+    rgba(8, 10, 26, .5);
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+}
+.shop-cost{
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.shop-action{
+  margin-top: 10px;
+  width: 100%;
+}
+.result-list{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 8px 0 0;
+}
+.result-item{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(180,200,255,.12);
+  background: rgba(6, 8, 22, .62);
+  box-shadow: 0 8px 18px rgba(0,0,0,.22);
+  opacity: 0;
+  transform: translateY(8px) scale(.98);
+}
+.shard-tag{
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #c4b5fd;
+  border: 1px solid rgba(196,181,253,.22);
+  background: rgba(124,58,237,.12);
+}
+.result.reveal .result-item{
+  animation: reveal-item .38s ease forwards;
+}
 .result::after{
   content:"";
   position:absolute;
@@ -220,6 +374,10 @@ main{
   20%{ opacity:.35; }
   50%{ opacity:.25; }
   100%{ transform: translateX(70%); opacity:.0; }
+}
+@keyframes reveal-item{
+  0%{ opacity: 0; transform: translateY(10px) scale(.98); }
+  100%{ opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Cards grid */

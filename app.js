@@ -123,6 +123,64 @@ const BASE_RATES = [
 const COST_SINGLE = 10;
 const COST_TEN = 100; // keep simple for now
 
+const BANNERS = [
+  {
+    id: "standard",
+    name: "Standard Wish",
+    description: "Balanced rates across all characters.",
+    featuredIds: [],
+    featuredWeight: 1,
+    durationMs: 72 * 60 * 60 * 1000,
+  },
+  {
+    id: "featured-dawn",
+    name: "Dawn Chorus",
+    description: "Featured: Sol, Auroria, Nyx (boosted within their rarities).",
+    featuredIds: ["l001", "l002", "e001"],
+    featuredWeight: 4,
+    durationMs: 48 * 60 * 60 * 1000,
+  },
+];
+
+const SHARD_VALUES = {
+  Common: 1,
+  Rare: 5,
+  Epic: 20,
+  Legendary: 100,
+};
+
+const MISSIONS = [
+  {
+    id: "scout",
+    name: "Forest Scout",
+    description: "Survey the starlit grove for secrets.",
+    durationMs: 5 * 60 * 1000,
+    rewards: { gems: 30, shards: 5, xp: 20 },
+  },
+  {
+    id: "escort",
+    name: "Skyway Escort",
+    description: "Guard a caravan through the floating isles.",
+    durationMs: 12 * 60 * 1000,
+    rewards: { gems: 60, shards: 12, xp: 45 },
+  },
+  {
+    id: "relic",
+    name: "Relic Dive",
+    description: "Recover artifacts from the moonlit ruins.",
+    durationMs: 20 * 60 * 1000,
+    rewards: { gems: 90, shards: 25, xp: 80 },
+  },
+];
+
+const SHOP_CONFIG = {
+  id: "featured-shop",
+  name: "Featured Exchange",
+  durationMs: 48 * 60 * 60 * 1000,
+  costShards: 120,
+  featuredIds: ["l001", "l002", "e001"],
+};
+
 // Pity rules (simple, readable, adjustable)
 const PITY = {
   epicAt: 10,         // guarantees Epic+ on pull 10 if none since last Epic+
@@ -135,6 +193,17 @@ const PITY = {
 const DEFAULT_STATE = {
   version: 2,
   gems: 50,
+  shards: 0,
+  selectedBannerId: "standard",
+  level: 1,
+  xp: 0,
+  loginStreak: 0,
+  lastLoginDate: "",
+  activeMissionId: "",
+  missionEndsAt: 0,
+  missionsCompleted: 0,
+  shopEndsAt: 0,
+  bannerEndsAt: {},
   owned: {},
 
   // pity counters
@@ -159,7 +228,18 @@ function loadState() {
     // Minimal validation
     if (!parsed || typeof parsed !== "object") return safeClone(DEFAULT_STATE);
     if (typeof parsed.gems !== "number") return safeClone(DEFAULT_STATE);
+    if (typeof parsed.shards !== "number") parsed.shards = 0;
     if (!parsed.owned || typeof parsed.owned !== "object") return safeClone(DEFAULT_STATE);
+    if (typeof parsed.selectedBannerId !== "string") parsed.selectedBannerId = "standard";
+    if (typeof parsed.level !== "number") parsed.level = 1;
+    if (typeof parsed.xp !== "number") parsed.xp = 0;
+    if (typeof parsed.loginStreak !== "number") parsed.loginStreak = 0;
+    if (typeof parsed.lastLoginDate !== "string") parsed.lastLoginDate = "";
+    if (typeof parsed.activeMissionId !== "string") parsed.activeMissionId = "";
+    if (typeof parsed.missionEndsAt !== "number") parsed.missionEndsAt = 0;
+    if (typeof parsed.missionsCompleted !== "number") parsed.missionsCompleted = 0;
+    if (typeof parsed.shopEndsAt !== "number") parsed.shopEndsAt = 0;
+    if (!parsed.bannerEndsAt || typeof parsed.bannerEndsAt !== "object") parsed.bannerEndsAt = {};
 
     // Migrate from older state key if needed
     // If user has the old key, merge owned + gems once.
@@ -284,14 +364,142 @@ function rollRarity() {
   return "Common";
 }
 
-function pickFromPool(rarity) {
-  const candidates = POOL.filter(c => c.rarity === rarity);
+function getActiveBanner() {
+  const found = BANNERS.find(b => b.id === state.selectedBannerId);
+  if (found) return found;
+  state.selectedBannerId = BANNERS[0].id;
+  return BANNERS[0];
+}
+
+function pickWeightedCandidate(candidates, featuredSet, featuredWeight) {
   if (candidates.length === 0) return POOL[0];
-  return candidates[Math.floor(Math.random() * candidates.length)];
+  if (!featuredSet || featuredSet.size === 0 || featuredWeight <= 1) {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  const weighted = candidates.map(char => ({
+    char,
+    weight: featuredSet.has(char.id) ? featuredWeight : 1,
+  }));
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * total;
+  for (const item of weighted) {
+    roll -= item.weight;
+    if (roll <= 0) return item.char;
+  }
+  return weighted[weighted.length - 1].char;
+}
+
+function pickFromPool(rarity, banner) {
+  const candidates = POOL.filter(c => c.rarity === rarity);
+  const featuredSet = banner?.featuredIds?.length ? new Set(banner.featuredIds) : null;
+  const featuredWeight = banner?.featuredWeight ?? 1;
+  return pickWeightedCandidate(candidates, featuredSet, featuredWeight);
 }
 
 function addOwned(id) {
   state.owned[id] = (state.owned[id] ?? 0) + 1;
+}
+
+function awardShards(rarity) {
+  const gain = SHARD_VALUES[rarity] ?? 0;
+  state.shards += gain;
+  return gain;
+}
+
+function xpForNextLevel(level) {
+  return 100 + (level - 1) * 40;
+}
+
+function awardXp(amount) {
+  state.xp += amount;
+  while (state.xp >= xpForNextLevel(state.level)) {
+    state.xp -= xpForNextLevel(state.level);
+    state.level += 1;
+    state.gems += 25;
+  }
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysBetween(a, b) {
+  const start = Date.parse(a);
+  const end = Date.parse(b);
+  if (Number.isNaN(start) || Number.isNaN(end)) return 0;
+  return Math.floor((end - start) / 86400000);
+}
+
+function loginRewardForStreak(streak) {
+  return 20 + Math.min(80, (streak - 1) * 10);
+}
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const time = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return days > 0 ? `${days}d ${time}` : time;
+}
+
+function getActiveMission() {
+  return MISSIONS.find(mission => mission.id === state.activeMissionId) ?? null;
+}
+
+function missionRemainingMs() {
+  if (!state.activeMissionId) return 0;
+  return Math.max(0, state.missionEndsAt - Date.now());
+}
+
+function canClaimMission() {
+  return Boolean(state.activeMissionId) && missionRemainingMs() === 0;
+}
+
+function ensureShopWindow() {
+  if (!state.shopEndsAt || state.shopEndsAt < Date.now() - SHOP_CONFIG.durationMs) {
+    state.shopEndsAt = Date.now() + SHOP_CONFIG.durationMs;
+    saveState();
+  }
+}
+
+function shopRemainingMs() {
+  return Math.max(0, state.shopEndsAt - Date.now());
+}
+
+function shopIsOpen() {
+  return shopRemainingMs() > 0;
+}
+
+function shopFeaturedUnits() {
+  const byId = new Map(POOL.map(c => [c.id, c]));
+  return SHOP_CONFIG.featuredIds.map(id => byId.get(id)).filter(Boolean);
+}
+
+function ensureBannerWindows() {
+  let touched = false;
+  for (const banner of BANNERS) {
+    if (!banner.durationMs) continue;
+    const endsAt = state.bannerEndsAt[banner.id];
+    if (!endsAt || endsAt < Date.now() - banner.durationMs) {
+      state.bannerEndsAt[banner.id] = Date.now() + banner.durationMs;
+      touched = true;
+    }
+  }
+  if (touched) saveState();
+}
+
+function bannerRemainingMs(bannerId) {
+  const endsAt = state.bannerEndsAt[bannerId] ?? 0;
+  return Math.max(0, endsAt - Date.now());
+}
+
+function bannerFeaturedUnits(banner) {
+  if (!banner?.featuredIds?.length) return [];
+  const byId = new Map(POOL.map(c => [c.id, c]));
+  return banner.featuredIds.map(id => byId.get(id)).filter(Boolean);
 }
 
 function bumpPity(rarity) {
@@ -306,22 +514,44 @@ function bumpPity(rarity) {
   }
 }
 
-function formatPullLine(char, count) {
+function formatRevealCard(pull, index) {
+  const { char, isDuplicate, shardsGained } = pull;
   const cls = rarityClass(char.rarity);
-  const qty = count > 1 ? ` ×${count}` : "";
-  return `<div style="margin:6px 0">
-    <span class="rarity ${cls}">${char.rarity}</span>
-    <strong style="margin-left:8px">${char.element} ${char.name}${qty}</strong>
-    <small style="display:block; opacity:.9; margin-left:2px">${char.title}</small>
-  </div>`;
+  const shardTag = isDuplicate
+    ? `<div class="shard-tag">+${shardsGained} shards</div>`
+    : "";
+  return `
+    <div class="result-item" style="animation-delay:${index * 70}ms">
+      <div class="rarity ${cls}">${char.rarity}</div>
+      ${shardTag}
+      <div style="margin-top:8px; font-weight:800">${char.element} ${char.name}</div>
+      <small style="opacity:.9">${char.title}</small>
+    </div>
+  `;
 }
 
 // ----- UI wiring (works even if some elements are missing) -----
 function $(id) { return document.getElementById(id); }
 
 const gemsEl = $("gems");
+const shardsEl = $("shards");
 const addGemsBtn = $("addGems");
 const summonBtn1 = $("summon1");
+const bannerSelect = $("bannerSelect");
+const bannerDesc = $("bannerDesc");
+const bannerTimer = $("bannerTimer");
+const bannerPreview = $("bannerPreview");
+const loginStatus = $("loginStatus");
+const loginActionBtn = $("loginAction");
+const streakEl = $("loginStreak");
+const levelEl = $("playerLevel");
+const xpEl = $("playerXp");
+const xpFillEl = $("xpFill");
+const missionList = $("missionList");
+const shopList = $("shopList");
+const shopStatus = $("shopStatus");
+const shopTimer = $("shopTimer");
+const shopShardBalance = $("shopShardBalance");
 const resultEl = $("result");
 const collectionEl = $("collection");
 
@@ -389,6 +619,34 @@ function ensureExtraUI() {
 
 function render() {
   if (gemsEl) gemsEl.textContent = String(state.gems);
+  if (shardsEl) shardsEl.textContent = String(state.shards);
+  if (bannerSelect) {
+    bannerSelect.innerHTML = BANNERS.map(
+      banner => `<option value="${banner.id}">${banner.name}</option>`
+    ).join("");
+    bannerSelect.value = getActiveBanner().id;
+  }
+  if (bannerDesc) {
+    bannerDesc.textContent = getActiveBanner().description;
+  }
+  updateBannerUI();
+  if (streakEl) streakEl.textContent = String(state.loginStreak);
+  if (levelEl) levelEl.textContent = String(state.level);
+  if (xpEl) xpEl.textContent = `${state.xp}/${xpForNextLevel(state.level)}`;
+  if (xpFillEl) {
+    const pct = Math.min(100, Math.round((state.xp / xpForNextLevel(state.level)) * 100));
+    xpFillEl.style.width = `${pct}%`;
+  }
+  if (loginStatus) {
+    const key = todayKey();
+    loginStatus.textContent = state.lastLoginDate === key ? "Claimed today" : "Ready to claim";
+  }
+  if (loginActionBtn) {
+    const key = todayKey();
+    loginActionBtn.disabled = state.lastLoginDate === key;
+  }
+  renderMissions();
+  renderShop();
 
   const pityText = document.getElementById("pityText");
   if (pityText) {
@@ -456,29 +714,23 @@ function openCharacterDialog(char, count) {
 function showResultPulls(pulls) {
   if (!resultEl) return;
 
-  // Group duplicates in the same multi pull for nicer output
-  const map = new Map();
-  for (const p of pulls) {
-    const key = p.id;
-    map.set(key, { char: p, count: (map.get(key)?.count ?? 0) + 1 });
-  }
-
-  const lines = [...map.values()]
-    .sort((a, b) => RARITY_ORDER[a.char.rarity] - RARITY_ORDER[b.char.rarity])
-    .map(x => formatPullLine(x.char, x.count))
-    .join("");
-
+  const totalShards = pulls.reduce((sum, pull) => sum + (pull.shardsGained ?? 0), 0);
   const summary = pulls.length === 1 ? "You got" : "You pulled";
-  const last = pulls[pulls.length - 1];
+  const last = pulls[pulls.length - 1]?.char;
   const glow = `box-shadow: 0 0 0 1px rgba(170,190,255,.12), 0 18px 40px rgba(0,0,0,.35);`;
   resultEl.style.cssText = glow;
+  const cards = pulls.map((pull, index) => formatRevealCard(pull, index)).join("");
   resultEl.innerHTML = `
     <div style="opacity:.95; margin-bottom:8px">${summary}:</div>
-    ${lines}
+    <div class="result-list">${cards}</div>
     <div style="margin-top:10px; opacity:.88">
       <small>Total pulls: ${state.totalPulls} · Next Epic+ in ≤ ${Math.max(0, PITY.epicAt - state.sinceEpicPlus)} · Next Legendary in ≤ ${Math.max(0, PITY.legendaryAt - state.sinceLegendary)}</small>
+      <small style="display:block; margin-top:4px">Shards gained: ${totalShards}</small>
     </div>
   `;
+  resultEl.classList.remove("reveal");
+  void resultEl.offsetHeight;
+  resultEl.classList.add("reveal");
 
   // Tiny excitement ping for higher rarity
   if (last && (last.rarity === "Epic" || last.rarity === "Legendary")) {
@@ -494,21 +746,202 @@ function setResultText(txt) {
   resultEl.textContent = txt;
 }
 
+function renderMissions() {
+  if (!missionList) return;
+  if (!missionList.dataset.ready) {
+    missionList.innerHTML = MISSIONS.map(
+      mission => `
+        <article class="mission-card" data-mission-id="${mission.id}">
+          <div class="mission-header">
+            <strong>${mission.name}</strong>
+            <small class="mission-status" id="mission-status-${mission.id}"></small>
+          </div>
+          <small>${mission.description}</small>
+          <div class="mission-rewards">
+            <span>💎 ${mission.rewards.gems} gems</span>
+            <span>💠 ${mission.rewards.shards} shards</span>
+            <span>✨ ${mission.rewards.xp} XP</span>
+          </div>
+          <button type="button" class="mission-action" data-mission-action="${mission.id}">Start</button>
+        </article>
+      `
+    ).join("");
+    missionList.dataset.ready = "true";
+
+    missionList.querySelectorAll("[data-mission-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        const missionId = button.getAttribute("data-mission-action");
+        if (missionId) handleMissionAction(missionId);
+      });
+    });
+  }
+
+  updateMissionUI();
+}
+
+function renderShop() {
+  if (!shopList || !shopStatus || !shopTimer || !shopShardBalance) return;
+  ensureShopWindow();
+  shopShardBalance.textContent = String(state.shards);
+
+  const open = shopIsOpen();
+  shopStatus.textContent = open ? SHOP_CONFIG.name : "Shop closed";
+  shopTimer.textContent = open ? `Ends in ${formatDuration(shopRemainingMs())}` : "Come back later";
+
+  if (!shopList.dataset.ready) {
+    const units = shopFeaturedUnits();
+    shopList.innerHTML = units.map(unit => `
+      <article class="shop-card" data-shop-id="${unit.id}">
+        <div class="rarity ${rarityClass(unit.rarity)}">${unit.rarity}</div>
+        <div style="margin-top:8px; font-weight:800">${unit.element} ${unit.name}</div>
+        <small style="opacity:.9">${unit.title}</small>
+        <div class="shop-cost">Cost: 💠 ${SHOP_CONFIG.costShards} shards</div>
+        <button type="button" class="shop-action" data-shop-action="${unit.id}">Buy</button>
+      </article>
+    `).join("");
+    shopList.dataset.ready = "true";
+
+    shopList.querySelectorAll("[data-shop-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        const unitId = button.getAttribute("data-shop-action");
+        if (unitId) handleShopPurchase(unitId);
+      });
+    });
+  }
+
+  updateShopUI();
+}
+
+function updateShopUI() {
+  if (!shopList) return;
+  const open = shopIsOpen();
+  const canAfford = state.shards >= SHOP_CONFIG.costShards;
+
+  shopList.querySelectorAll(".shop-card").forEach(card => {
+    const button = card.querySelector(".shop-action");
+    if (!(button instanceof HTMLButtonElement)) return;
+    if (!open) {
+      button.textContent = "Unavailable";
+      button.disabled = true;
+      return;
+    }
+    button.textContent = canAfford ? "Buy" : "Need shards";
+    button.disabled = !canAfford;
+  });
+}
+
+function handleShopPurchase(unitId) {
+  if (!shopIsOpen()) return;
+  if (state.shards < SHOP_CONFIG.costShards) return;
+  const unit = POOL.find(c => c.id === unitId);
+  if (!unit) return;
+
+  state.shards -= SHOP_CONFIG.costShards;
+  addOwned(unit.id);
+  awardXp(10);
+  saveState();
+  render();
+  setResultText(`Purchased ${unit.name} for ${SHOP_CONFIG.costShards} shards.`);
+}
+
+function updateBannerUI() {
+  if (!bannerTimer || !bannerPreview) return;
+  ensureBannerWindows();
+  const activeBanner = getActiveBanner();
+  const remaining = bannerRemainingMs(activeBanner.id);
+  bannerTimer.textContent = remaining > 0
+    ? `Ends in ${formatDuration(remaining)}`
+    : "Banner closed";
+
+  const featured = bannerFeaturedUnits(activeBanner);
+  bannerPreview.innerHTML = featured.length
+    ? featured.map(unit => `
+        <div class="preview-pill ${rarityClass(unit.rarity)}">
+          ${unit.element} ${unit.name}
+        </div>
+      `).join("")
+    : `<small class="preview-empty">No featured units.</small>`;
+}
+
+function updateMissionUI() {
+  if (!missionList) return;
+  const activeId = state.activeMissionId;
+  const remaining = missionRemainingMs();
+  const canClaim = canClaimMission();
+
+  for (const mission of MISSIONS) {
+    const statusEl = document.getElementById(`mission-status-${mission.id}`);
+    const actionBtn = missionList.querySelector(`[data-mission-action="${mission.id}"]`);
+    if (!statusEl || !(actionBtn instanceof HTMLButtonElement)) continue;
+
+    if (activeId === mission.id) {
+      if (canClaim) {
+        statusEl.textContent = "Complete";
+        actionBtn.textContent = "Claim";
+        actionBtn.disabled = false;
+      } else {
+        statusEl.textContent = `In progress · ${formatDuration(remaining)}`;
+        actionBtn.textContent = "In progress";
+        actionBtn.disabled = true;
+      }
+    } else if (activeId) {
+      statusEl.textContent = "Locked";
+      actionBtn.textContent = "Unavailable";
+      actionBtn.disabled = true;
+    } else {
+      statusEl.textContent = "Ready";
+      actionBtn.textContent = "Start";
+      actionBtn.disabled = false;
+    }
+  }
+}
+
+function handleMissionAction(missionId) {
+  const mission = MISSIONS.find(item => item.id === missionId);
+  if (!mission) return;
+
+  if (state.activeMissionId) {
+    if (state.activeMissionId !== missionId) return;
+    if (!canClaimMission()) return;
+
+    state.gems += mission.rewards.gems;
+    state.shards += mission.rewards.shards;
+    awardXp(mission.rewards.xp);
+    state.activeMissionId = "";
+    state.missionEndsAt = 0;
+    state.missionsCompleted += 1;
+    saveState();
+    render();
+    setResultText(`Mission complete! +${mission.rewards.gems} gems, +${mission.rewards.shards} shards.`);
+    return;
+  }
+
+  state.activeMissionId = missionId;
+  state.missionEndsAt = Date.now() + mission.durationMs;
+  saveState();
+  render();
+  setResultText(`Mission started: ${mission.name}.`);
+}
+
 // ----- Actions -----
 function doPull(n) {
   const pulls = [];
+  const banner = getActiveBanner();
   for (let i = 0; i < n; i += 1) {
     const rarity = rollRarity();
-    const char = pickFromPool(rarity);
+    const char = pickFromPool(rarity, banner);
+    const alreadyOwned = (state.owned[char.id] ?? 0) > 0;
 
+    const shardsGained = alreadyOwned ? awardShards(char.rarity) : 0;
     addOwned(char.id);
     bumpPity(char.rarity);
+    awardXp(6);
 
     state.totalPulls += 1;
-    pulls.push(char);
+    pulls.push({ char, isDuplicate: alreadyOwned, shardsGained });
   }
 
-  state.lastPulls = pulls.map(p => p.id).slice(-20);
+  state.lastPulls = pulls.map(p => p.char.id).slice(-20);
   return pulls;
 }
 
@@ -521,6 +954,32 @@ function spend(cost) {
 }
 
 function bindEvents() {
+  if (loginActionBtn) {
+    loginActionBtn.addEventListener("click", () => {
+      const key = todayKey();
+      if (state.lastLoginDate === key) return;
+      const deltaDays = state.lastLoginDate ? daysBetween(state.lastLoginDate, key) : 1;
+      state.loginStreak = deltaDays === 1 ? state.loginStreak + 1 : 1;
+      state.lastLoginDate = key;
+      const reward = loginRewardForStreak(state.loginStreak);
+      state.gems += reward;
+      awardXp(15);
+      saveState();
+      render();
+      setResultText(`Daily login claimed! +${reward} gems.`);
+    });
+  }
+
+  if (bannerSelect) {
+    bannerSelect.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLSelectElement)) return;
+      state.selectedBannerId = target.value;
+      saveState();
+      render();
+    });
+  }
+
   if (addGemsBtn) {
     addGemsBtn.addEventListener("click", () => {
       state.gems += 100;
@@ -577,6 +1036,9 @@ function bindEvents() {
 ensureExtraUI();
 bindEvents();
 render();
+setInterval(updateMissionUI, 1000);
+setInterval(updateShopUI, 1000);
+setInterval(updateBannerUI, 1000);
 
 // Optional service worker registration if you have sw.js
 if ("serviceWorker" in navigator) {
