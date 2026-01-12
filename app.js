@@ -123,6 +123,30 @@ const BASE_RATES = [
 const COST_SINGLE = 10;
 const COST_TEN = 100; // keep simple for now
 
+const BANNERS = [
+  {
+    id: "standard",
+    name: "Standard Wish",
+    description: "Balanced rates across all characters.",
+    featuredIds: [],
+    featuredWeight: 1,
+  },
+  {
+    id: "featured-dawn",
+    name: "Dawn Chorus",
+    description: "Featured: Sol, Auroria, Nyx (boosted within their rarities).",
+    featuredIds: ["l001", "l002", "e001"],
+    featuredWeight: 4,
+  },
+];
+
+const SHARD_VALUES = {
+  Common: 1,
+  Rare: 5,
+  Epic: 20,
+  Legendary: 100,
+};
+
 // Pity rules (simple, readable, adjustable)
 const PITY = {
   epicAt: 10,         // guarantees Epic+ on pull 10 if none since last Epic+
@@ -135,6 +159,12 @@ const PITY = {
 const DEFAULT_STATE = {
   version: 2,
   gems: 50,
+  shards: 0,
+  selectedBannerId: "standard",
+  level: 1,
+  xp: 0,
+  loginStreak: 0,
+  lastLoginDate: "",
   owned: {},
 
   // pity counters
@@ -159,7 +189,13 @@ function loadState() {
     // Minimal validation
     if (!parsed || typeof parsed !== "object") return safeClone(DEFAULT_STATE);
     if (typeof parsed.gems !== "number") return safeClone(DEFAULT_STATE);
+    if (typeof parsed.shards !== "number") parsed.shards = 0;
     if (!parsed.owned || typeof parsed.owned !== "object") return safeClone(DEFAULT_STATE);
+    if (typeof parsed.selectedBannerId !== "string") parsed.selectedBannerId = "standard";
+    if (typeof parsed.level !== "number") parsed.level = 1;
+    if (typeof parsed.xp !== "number") parsed.xp = 0;
+    if (typeof parsed.loginStreak !== "number") parsed.loginStreak = 0;
+    if (typeof parsed.lastLoginDate !== "string") parsed.lastLoginDate = "";
 
     // Migrate from older state key if needed
     // If user has the old key, merge owned + gems once.
@@ -284,14 +320,75 @@ function rollRarity() {
   return "Common";
 }
 
-function pickFromPool(rarity) {
-  const candidates = POOL.filter(c => c.rarity === rarity);
+function getActiveBanner() {
+  const found = BANNERS.find(b => b.id === state.selectedBannerId);
+  if (found) return found;
+  state.selectedBannerId = BANNERS[0].id;
+  return BANNERS[0];
+}
+
+function pickWeightedCandidate(candidates, featuredSet, featuredWeight) {
   if (candidates.length === 0) return POOL[0];
-  return candidates[Math.floor(Math.random() * candidates.length)];
+  if (!featuredSet || featuredSet.size === 0 || featuredWeight <= 1) {
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  const weighted = candidates.map(char => ({
+    char,
+    weight: featuredSet.has(char.id) ? featuredWeight : 1,
+  }));
+  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * total;
+  for (const item of weighted) {
+    roll -= item.weight;
+    if (roll <= 0) return item.char;
+  }
+  return weighted[weighted.length - 1].char;
+}
+
+function pickFromPool(rarity, banner) {
+  const candidates = POOL.filter(c => c.rarity === rarity);
+  const featuredSet = banner?.featuredIds?.length ? new Set(banner.featuredIds) : null;
+  const featuredWeight = banner?.featuredWeight ?? 1;
+  return pickWeightedCandidate(candidates, featuredSet, featuredWeight);
 }
 
 function addOwned(id) {
   state.owned[id] = (state.owned[id] ?? 0) + 1;
+}
+
+function awardShards(rarity) {
+  const gain = SHARD_VALUES[rarity] ?? 0;
+  state.shards += gain;
+  return gain;
+}
+
+function xpForNextLevel(level) {
+  return 100 + (level - 1) * 40;
+}
+
+function awardXp(amount) {
+  state.xp += amount;
+  while (state.xp >= xpForNextLevel(state.level)) {
+    state.xp -= xpForNextLevel(state.level);
+    state.level += 1;
+    state.gems += 25;
+  }
+}
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysBetween(a, b) {
+  const start = Date.parse(a);
+  const end = Date.parse(b);
+  if (Number.isNaN(start) || Number.isNaN(end)) return 0;
+  return Math.floor((end - start) / 86400000);
+}
+
+function loginRewardForStreak(streak) {
+  return 20 + Math.min(80, (streak - 1) * 10);
 }
 
 function bumpPity(rarity) {
@@ -306,22 +403,37 @@ function bumpPity(rarity) {
   }
 }
 
-function formatPullLine(char, count) {
+function formatRevealCard(pull, index) {
+  const { char, isDuplicate, shardsGained } = pull;
   const cls = rarityClass(char.rarity);
-  const qty = count > 1 ? ` ×${count}` : "";
-  return `<div style="margin:6px 0">
-    <span class="rarity ${cls}">${char.rarity}</span>
-    <strong style="margin-left:8px">${char.element} ${char.name}${qty}</strong>
-    <small style="display:block; opacity:.9; margin-left:2px">${char.title}</small>
-  </div>`;
+  const shardTag = isDuplicate
+    ? `<div class="shard-tag">+${shardsGained} shards</div>`
+    : "";
+  return `
+    <div class="result-item" style="animation-delay:${index * 70}ms">
+      <div class="rarity ${cls}">${char.rarity}</div>
+      ${shardTag}
+      <div style="margin-top:8px; font-weight:800">${char.element} ${char.name}</div>
+      <small style="opacity:.9">${char.title}</small>
+    </div>
+  `;
 }
 
 // ----- UI wiring (works even if some elements are missing) -----
 function $(id) { return document.getElementById(id); }
 
 const gemsEl = $("gems");
+const shardsEl = $("shards");
 const addGemsBtn = $("addGems");
 const summonBtn1 = $("summon1");
+const bannerSelect = $("bannerSelect");
+const bannerDesc = $("bannerDesc");
+const loginStatus = $("loginStatus");
+const loginActionBtn = $("loginAction");
+const streakEl = $("loginStreak");
+const levelEl = $("playerLevel");
+const xpEl = $("playerXp");
+const xpFillEl = $("xpFill");
 const resultEl = $("result");
 const collectionEl = $("collection");
 
@@ -389,6 +501,31 @@ function ensureExtraUI() {
 
 function render() {
   if (gemsEl) gemsEl.textContent = String(state.gems);
+  if (shardsEl) shardsEl.textContent = String(state.shards);
+  if (bannerSelect) {
+    bannerSelect.innerHTML = BANNERS.map(
+      banner => `<option value="${banner.id}">${banner.name}</option>`
+    ).join("");
+    bannerSelect.value = getActiveBanner().id;
+  }
+  if (bannerDesc) {
+    bannerDesc.textContent = getActiveBanner().description;
+  }
+  if (streakEl) streakEl.textContent = String(state.loginStreak);
+  if (levelEl) levelEl.textContent = String(state.level);
+  if (xpEl) xpEl.textContent = `${state.xp}/${xpForNextLevel(state.level)}`;
+  if (xpFillEl) {
+    const pct = Math.min(100, Math.round((state.xp / xpForNextLevel(state.level)) * 100));
+    xpFillEl.style.width = `${pct}%`;
+  }
+  if (loginStatus) {
+    const key = todayKey();
+    loginStatus.textContent = state.lastLoginDate === key ? "Claimed today" : "Ready to claim";
+  }
+  if (loginActionBtn) {
+    const key = todayKey();
+    loginActionBtn.disabled = state.lastLoginDate === key;
+  }
 
   const pityText = document.getElementById("pityText");
   if (pityText) {
@@ -456,29 +593,23 @@ function openCharacterDialog(char, count) {
 function showResultPulls(pulls) {
   if (!resultEl) return;
 
-  // Group duplicates in the same multi pull for nicer output
-  const map = new Map();
-  for (const p of pulls) {
-    const key = p.id;
-    map.set(key, { char: p, count: (map.get(key)?.count ?? 0) + 1 });
-  }
-
-  const lines = [...map.values()]
-    .sort((a, b) => RARITY_ORDER[a.char.rarity] - RARITY_ORDER[b.char.rarity])
-    .map(x => formatPullLine(x.char, x.count))
-    .join("");
-
+  const totalShards = pulls.reduce((sum, pull) => sum + (pull.shardsGained ?? 0), 0);
   const summary = pulls.length === 1 ? "You got" : "You pulled";
-  const last = pulls[pulls.length - 1];
+  const last = pulls[pulls.length - 1]?.char;
   const glow = `box-shadow: 0 0 0 1px rgba(170,190,255,.12), 0 18px 40px rgba(0,0,0,.35);`;
   resultEl.style.cssText = glow;
+  const cards = pulls.map((pull, index) => formatRevealCard(pull, index)).join("");
   resultEl.innerHTML = `
     <div style="opacity:.95; margin-bottom:8px">${summary}:</div>
-    ${lines}
+    <div class="result-list">${cards}</div>
     <div style="margin-top:10px; opacity:.88">
       <small>Total pulls: ${state.totalPulls} · Next Epic+ in ≤ ${Math.max(0, PITY.epicAt - state.sinceEpicPlus)} · Next Legendary in ≤ ${Math.max(0, PITY.legendaryAt - state.sinceLegendary)}</small>
+      <small style="display:block; margin-top:4px">Shards gained: ${totalShards}</small>
     </div>
   `;
+  resultEl.classList.remove("reveal");
+  void resultEl.offsetHeight;
+  resultEl.classList.add("reveal");
 
   // Tiny excitement ping for higher rarity
   if (last && (last.rarity === "Epic" || last.rarity === "Legendary")) {
@@ -497,18 +628,22 @@ function setResultText(txt) {
 // ----- Actions -----
 function doPull(n) {
   const pulls = [];
+  const banner = getActiveBanner();
   for (let i = 0; i < n; i += 1) {
     const rarity = rollRarity();
-    const char = pickFromPool(rarity);
+    const char = pickFromPool(rarity, banner);
+    const alreadyOwned = (state.owned[char.id] ?? 0) > 0;
 
+    const shardsGained = alreadyOwned ? awardShards(char.rarity) : 0;
     addOwned(char.id);
     bumpPity(char.rarity);
+    awardXp(6);
 
     state.totalPulls += 1;
-    pulls.push(char);
+    pulls.push({ char, isDuplicate: alreadyOwned, shardsGained });
   }
 
-  state.lastPulls = pulls.map(p => p.id).slice(-20);
+  state.lastPulls = pulls.map(p => p.char.id).slice(-20);
   return pulls;
 }
 
@@ -521,6 +656,32 @@ function spend(cost) {
 }
 
 function bindEvents() {
+  if (loginActionBtn) {
+    loginActionBtn.addEventListener("click", () => {
+      const key = todayKey();
+      if (state.lastLoginDate === key) return;
+      const deltaDays = state.lastLoginDate ? daysBetween(state.lastLoginDate, key) : 1;
+      state.loginStreak = deltaDays === 1 ? state.loginStreak + 1 : 1;
+      state.lastLoginDate = key;
+      const reward = loginRewardForStreak(state.loginStreak);
+      state.gems += reward;
+      awardXp(15);
+      saveState();
+      render();
+      setResultText(`Daily login claimed! +${reward} gems.`);
+    });
+  }
+
+  if (bannerSelect) {
+    bannerSelect.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLSelectElement)) return;
+      state.selectedBannerId = target.value;
+      saveState();
+      render();
+    });
+  }
+
   if (addGemsBtn) {
     addGemsBtn.addEventListener("click", () => {
       state.gems += 100;
